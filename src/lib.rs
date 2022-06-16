@@ -1,6 +1,7 @@
 mod cmp;
 mod ops;
 
+use std::cmp::{min, max};
 use std::hint::unreachable_unchecked;
 
 #[derive(Clone, Debug)]
@@ -12,6 +13,33 @@ pub enum Expr {
     Or(Box<Self>, Box<Self>),
 }
 impl Expr {
+    fn low_var(&self) -> u8 {
+        match self {
+            &Self::Var(id) => id,
+            Self::Not(ref e) => e.low_var(),
+            Self::Xor(ref a, ref b) => min(a.low_var(), b.low_var()),
+            Self::And(ref a, ref b) => min(a.low_var(), b.low_var()),
+            Self::Or(ref a, ref b) => min(a.low_var(), b.low_var())
+        }
+    }
+    fn high_var(&self) -> u8 {
+        match self {
+            &Self::Var(id) => id,
+            Self::Not(ref e) => e.high_var(),
+            Self::Xor(ref a, ref b) => max(a.high_var(), b.high_var()),
+            Self::And(ref a, ref b) => max(a.high_var(), b.high_var()),
+            Self::Or(ref a, ref b) => max(a.high_var(), b.high_var())
+        }
+    }
+    fn precedence(&self) -> u16 {
+        match self {
+            &Self::Var(id) => id as u16,
+            Self::Not(_) => u8::MAX as u16 + 1,
+            Self::Xor(..) => u8::MAX as u16 + 2,
+            Self::And(..) => u8::MAX as u16 + 3,
+            Self::Or(..) => u8::MAX as u16 + 4,
+        }
+    }
     fn inc_vars(&mut self) {
         match self {
             &mut Self::Var(ref mut id) => *id += 1, 
