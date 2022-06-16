@@ -2,9 +2,10 @@ mod cmp;
 mod ops;
 
 use std::cmp::{min, max};
+use std::fmt;
 use std::hint::unreachable_unchecked;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum Expr {
     #[non_exhaustive] Var(u8),
     Not(Box<Self>),
@@ -60,9 +61,22 @@ impl Expr {
             }
         }
     }
+    fn expr_count(&self) -> u8 {
+        match self {
+            Self::Var(_) => 0,
+            Self::Not(_) => 1,
+            _ => 2,
+        }
+    }
     unsafe fn one_expr(self) -> Self {
         match self {
             Self::Not(e) => *e,
+            _ => unreachable_unchecked()
+        }
+    }
+    unsafe fn one_expr_ref(&self) -> &Self {
+        match self {
+            Self::Not(ref e) => &**e,
             _ => unreachable_unchecked()
         }
     }
@@ -74,8 +88,63 @@ impl Expr {
             _ => unreachable_unchecked()
         }
     }
+    unsafe fn two_expr_ref(&self) -> (&Self, &Self) {
+        match self {
+            Self::Xor(ref a, ref b) => (&**a, &**b),
+            Self::And(ref a, ref b) => (&**a, &**b),
+            Self::Or(ref a, ref b) => (&**a, &**b),
+            _ => unreachable_unchecked()
+        }
+    }
     #[inline]
     pub fn vars(&self) -> usize {
         self.high_var() as usize + 1
+    }
+}
+impl fmt::Debug for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fn inner(expr: &Expr, f: &mut fmt::Formatter<'_>, paren: bool) -> fmt::Result {
+            match expr.expr_count() {
+                0 => if let Expr::Var(ref id) = expr {
+                    write!(f, "{id}")
+                } else {Ok(())},
+                1 => unsafe {
+                    f.write_str("!")?;
+                    if paren {
+                        f.write_str("(")?;
+                    }
+                    inner(expr.one_expr_ref(), f, true)?;
+                    if paren {
+                        f.write_str("(")
+                    } else {
+                        Ok(())
+                    }
+                },
+                _ => unsafe {
+                    let (a, b) = expr.two_expr_ref();
+                    if paren {
+                        f.write_str("(")?;
+                    }
+                    inner(a, f, true)?;
+                    write!(f, " {} ", symbol(expr))?;
+                    inner(b, f, true)?;
+                    if paren {
+                        f.write_str("(")
+                    } else {
+                        Ok(())
+                    } 
+                }
+            }
+        }
+        unsafe fn symbol(expr: &Expr) -> char {
+            match expr {
+                Expr::Var(_) => std::hint::unreachable_unchecked(),
+                Expr::Not(_) => '!',
+                Expr::Xor(..) => '^',
+                Expr::And(..) => '&',
+                Expr::Or(..) => '|'
+            }
+        }
+        inner(self, f, false)
     }
 }
