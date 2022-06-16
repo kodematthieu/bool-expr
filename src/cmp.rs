@@ -1,7 +1,6 @@
 use crate::Expr::{self, *};
 use std::cmp::{
     Eq,
-    Ord,
     Ordering,
     PartialEq,
     PartialOrd
