@@ -1,6 +1,7 @@
 mod cmp;
 mod ops;
 
+pub use self::Expr::{Var, Const, Not, And, Or};
 use std::cmp::{min, max};
 use std::fmt;
 use std::hint::unreachable_unchecked;
@@ -8,91 +9,89 @@ use std::hint::unreachable_unchecked;
 #[derive(Clone)]
 pub enum Expr {
     #[non_exhaustive] Var(u8),
+    Const(bool),
     Not(Box<Self>),
-    Xor(Box<Self>, Box<Self>),
     And(Box<Self>, Box<Self>),
     Or(Box<Self>, Box<Self>),
 }
 impl Expr {
     fn low_var(&self) -> u8 {
         match self {
-            &Self::Var(id) => id,
-            Self::Not(ref e) => e.low_var(),
-            Self::Xor(ref a, ref b) => min(a.low_var(), b.low_var()),
-            Self::And(ref a, ref b) => min(a.low_var(), b.low_var()),
-            Self::Or(ref a, ref b) => min(a.low_var(), b.low_var())
+            Var(id) => *id,
+            Const(_) => u8::MAX,
+            Not(e) => e.low_var(),
+            And(a, b) => min(a.low_var(), b.low_var()),
+            Or(a, b) => min(a.low_var(), b.low_var())
         }
     }
     fn high_var(&self) -> u8 {
         match self {
-            &Self::Var(id) => id,
-            Self::Not(ref e) => e.high_var(),
-            Self::Xor(ref a, ref b) => max(a.high_var(), b.high_var()),
-            Self::And(ref a, ref b) => max(a.high_var(), b.high_var()),
-            Self::Or(ref a, ref b) => max(a.high_var(), b.high_var())
+            Var(id) => *id,
+            Const(_) => u8::MIN,
+            Not(e) => e.high_var(),
+            And(a, b) => max(a.high_var(), b.high_var()),
+            Or(a, b) => max(a.high_var(), b.high_var())
         }
     }
     fn precedence(&self) -> u16 {
         match self {
-            &Self::Var(id) => id as u16,
-            Self::Not(_) => u8::MAX as u16 + 1,
-            Self::Xor(..) => u8::MAX as u16 + 2,
-            Self::And(..) => u8::MAX as u16 + 3,
-            Self::Or(..) => u8::MAX as u16 + 4,
+            Var(_) => 0,
+            Const(_) => 0,
+            Not(_) => 1,
+            And(..) => 3,
+            Or(..) => 4,
         }
     }
     fn inc_vars(&mut self) {
         match self {
-            &mut Self::Var(ref mut id) => *id += 1, 
-            &mut Self::Not(ref mut e) => e.inc_vars(),
-            &mut Self::Xor(ref mut a, ref mut b) => {a.inc_vars(); b.inc_vars()},
-            &mut Self::And(ref mut a, ref mut b) => {a.inc_vars(); b.inc_vars()},
-            &mut Self::Or(ref mut a, ref mut b) => {a.inc_vars(); b.inc_vars()}
+            Var(id) => *id += 1, 
+            Const(_) => (),
+            Not(e) => e.inc_vars(),
+            And(a, b) => {a.inc_vars(); b.inc_vars()},
+            Or(a, b) => {a.inc_vars(); b.inc_vars()}
         }
     }
     fn dec_vars(&mut self) {
         if self.low_var() > 0 {
             match self {
-                &mut Self::Var(ref mut id) => *id -= 1,
-                &mut Self::Not(ref mut e) => e.dec_vars(),
-                &mut Self::Xor(ref mut a, ref mut b) => {a.dec_vars(); b.dec_vars()},
-                &mut Self::And(ref mut a, ref mut b) => {a.dec_vars(); b.dec_vars()},
-                &mut Self::Or(ref mut a, ref mut b) => {a.dec_vars(); b.dec_vars()}
+                Var(id) => *id -= 1,
+                Const(_) => (),
+                Not(e) => e.dec_vars(),
+                And(a, b) => {a.dec_vars(); b.dec_vars()},
+                Or(a, b) => {a.dec_vars(); b.dec_vars()}
             }
         }
     }
     fn expr_count(&self) -> u8 {
         match self {
-            Self::Var(_) => 0,
-            Self::Not(_) => 1,
+            Var(_) | Const(_) => 0,
+            Not(_) => 1,
             _ => 2,
         }
     }
     unsafe fn one_expr(self) -> Self {
         match self {
-            Self::Not(e) => *e,
+            Not(e) => *e,
             _ => unreachable_unchecked()
         }
     }
     unsafe fn one_expr_ref(&self) -> &Self {
         match self {
-            Self::Not(ref e) => &**e,
+            Not(e) => &**e,
             _ => unreachable_unchecked()
         }
     }
     unsafe fn two_expr(self) -> (Self, Self) {
         match self {
-            Self::Xor(a, b) => (*a, *b),
-            Self::And(a, b) => (*a, *b),
-            Self::Or(a, b) => (*a, *b),
+            And(a, b) => (*a, *b),
+            Or(a, b) => (*a, *b),
             _ => unreachable_unchecked()
         }
     }
     unsafe fn two_expr_ref(&self) -> (&Self, &Self) {
         match self {
-            Self::Xor(ref a, ref b) => (&**a, &**b),
-            Self::And(ref a, ref b) => (&**a, &**b),
-            Self::Or(ref a, ref b) => (&**a, &**b),
+            And(a, b) => (&**a, &**b),
+            Or(a, b) => (&**a, &**b),
             _ => unreachable_unchecked()
         }
     }
@@ -105,9 +104,15 @@ impl fmt::Debug for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fn inner(expr: &Expr, f: &mut fmt::Formatter<'_>, paren: bool) -> fmt::Result {
             match expr.expr_count() {
-                0 => if let Expr::Var(ref id) = expr {
-                    write!(f, "{id}")
-                } else {Ok(())},
+                0 => match expr {
+                    Var(id) => f.debug_tuple("Var").field(id).finish(),
+                    Const(konst) => {
+                        f.write_str("k")?;
+                        f.write_str(if *konst {"1"} else {"0"})
+                    }
+                    // SAFETY: 100% sure this won't be executed
+                    _ => unsafe { unreachable_unchecked() }
+                },
                 1 => unsafe {
                     f.write_str("!")?;
                     if paren {
@@ -120,6 +125,9 @@ impl fmt::Debug for Expr {
                         Ok(())
                     }
                 },
+                // SAFETY: It is clear that `symbol()` will only get executed if
+                // `Expr::expr_count()` returns 2, thus `symbol()` requirements
+                // are met.
                 _ => unsafe {
                     let (a, b) = expr.two_expr_ref();
                     if paren {
@@ -136,13 +144,14 @@ impl fmt::Debug for Expr {
                 }
             }
         }
+        // SAFETY: Caller must ensure that `expr` has child `Expr`/s
         unsafe fn symbol(expr: &Expr) -> char {
             match expr {
-                Expr::Var(_) => std::hint::unreachable_unchecked(),
-                Expr::Not(_) => '!',
-                Expr::Xor(..) => '^',
-                Expr::And(..) => '&',
-                Expr::Or(..) => '|'
+                Var(_)
+                    | Const(_) => unreachable_unchecked(),
+                Not(_) => '!',
+                And(..) => '&',
+                Or(..) => '|'
             }
         }
         inner(self, f, false)

@@ -9,12 +9,12 @@ impl Expr {
         assert!(slice.len() >= 2, "slice length must be 2 at minimum");
         match *slice {
             // 1 input, 2^2^1 cases
-            [false, false] => Var(0) & !Var(0),
+            [false, false] => Const(false),
             [ true, false] => Var(0),
             [false,  true] => !Var(0),
-            [ true,  true] => Var(0) | !Var(0),
+            [ true,  true] => Const(true),
             // 2 inputs, 2^2^2 cases
-            [false, false, false, false] => Var(0) & !Var(0),
+            [false, false, false, false] => Const(false),
             [ true, false, false, false] => !(Var(0) | Var(1)),
             [false,  true, false, false] => Var(1) & !Var(0),
             [ true,  true, false, false] => Var(0),
@@ -23,13 +23,13 @@ impl Expr {
             [false,  true,  true, false] => Var(0) ^ Var(1),
             [ true,  true,  true, false] => !(Var(0) & Var(1)),
             [false, false, false,  true] => Var(0) & Var(1),
-            [ true, false, false,  true] => !(Var(0) ^ Var(1)),
+            [ true, false, false,  true] => (Var(0) & Var(1)) | !(Var(0) | Var(1)),
             [false,  true, false,  true] => Var(1),
             [ true,  true, false,  true] => Var(1) | !Var(0),
             [false, false,  true,  true] => Var(0),
             [ true, false,  true,  true] => Var(0) | !Var(1),
             [false,  true,  true,  true] => Var(0) | Var(1),
-            [ true,  true,  true,  true] => Var(0) | !Var(0),
+            [ true,  true,  true,  true] => Const(true),
         
             // Rest: 3-256 inputs, (2^2^3)-(2^2^256) cases
             ref value => {
@@ -46,7 +46,7 @@ impl Expr {
 impl BitXor for Expr {
     type Output = Self;
     fn bitxor(self, rhs: Self) -> Self {
-        Xor(self.into(), rhs.into())
+        (self.clone() | rhs.clone()) & !(self & rhs)
     }
 }
 impl BitAnd for Expr {

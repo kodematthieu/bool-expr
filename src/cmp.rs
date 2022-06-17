@@ -12,8 +12,8 @@ impl PartialEq for Expr {
     fn eq(&self, rhs: &Self) -> bool {
         match (self, rhs) {
             (Var(a), Var(b)) => a == b,
+            (Const(a), Const(b)) => a == b,
             (Not(a), Not(b)) => a == b,
-            (Xor(a, b), Xor(c, d)) => a == c && b == d,
             (And(a, b), And(c, d)) => a == c && b == d,
             (Or(a, b), Or(c, d)) => a == c && b == d,
             _ => false
